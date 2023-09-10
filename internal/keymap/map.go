@@ -1,26 +1,26 @@
 package keymap
 
 import (
+	"encoding/gob"
+	"fmt"
 	"os"
 	"path/filepath"
-	"fmt"
-	"encoding/gob"
-
 )
 
 const (
 	MAP_TEMPLATE = "godis_keymap_%d.map"
 )
 
-
-// Simple abstraction to manage key lookups
 type KeyInfo struct {
-	size uint64
+	size   uint64
 	offset uint64
 }
+
+// Simple abstraction to manage key lookups
+// Deployed as an in-memory hash map (via go map)
 type KeyMap map[string]KeyInfo
 
-
+// The following methods
 // As the KeyMap is Updated, the map will be saved to a file
 func (k KeyMap) SaveMap(dir string, uid uint64) error {
 
@@ -63,4 +63,3 @@ func (k KeyMap) LoadMap(dir string, uid uint64) error {
 	return nil
 
 }
-

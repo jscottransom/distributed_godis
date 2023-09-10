@@ -1,31 +1,29 @@
 package kvstore
 
 import (
+	"bufio"
 	"fmt"
-	"sync"
 	"os"
 	"path/filepath"
-	"bufio"
-
+	"sync"
 )
 
 const (
-	STORE_TEMPLATE = "godis_kv_d.kv%"
+	STORE_TEMPLATE = "godis_kv_%d.kv"
 )
 
 // Record is a struct representing a key value pairing
 // Key must be a string and value must be a slice of bytes
 type Record struct {
-	key string
+	key   string
 	value []byte
 }
 
 type KVstore struct {
-	file *os.File // File to work with
-	mu sync.Mutex
+	file                   *os.File // File to work with
+	mu                     sync.Mutex
 	baseoffset, nextoffset uint64 // Represents the last offset in the file
-	buf *bufio.Writer 
-
+	buf                    *bufio.Writer
 }
 
 func NewKVstore(dir string, uid uint64) (*KVstore, error) {
@@ -43,10 +41,10 @@ func NewKVstore(dir string, uid uint64) (*KVstore, error) {
 	offset := uint64(stat.Size())
 
 	return &KVstore{file: storefile,
-					baseoffset: offset,
-					nextoffset: offset,
-					mu: sync.Mutex{},
-					buf: bufio.NewWriter(storefile)}, nil
+		baseoffset: offset,
+		nextoffset: offset,
+		mu:         sync.Mutex{},
+		buf:        bufio.NewWriter(storefile)}, nil
 }
 
 // Set the passed Key / Value pairing
@@ -66,7 +64,7 @@ func (s *KVstore) set(record Record) (uint64, error) {
 	// Increment the current offset by the number of bytes written to store the key
 	currentoffset += uint64(key)
 
-	// Write the values as bytes to the buffer 
+	// Write the values as bytes to the buffer
 	value, err := s.buf.Write(record.value)
 	if err != nil {
 		return 0, err
@@ -80,11 +78,6 @@ func (s *KVstore) set(record Record) (uint64, error) {
 
 	return currentoffset, nil
 
-	
-
-		
-	
-
 }
 
 // Get the value for the specified key from the store
@@ -93,7 +86,7 @@ func (s *KVstore) set(record Record) (uint64, error) {
 func (s *KVstore) get(offset uint64, n uint64) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	// Flush any pending writes to disk
 	s.buf.Flush()
 
