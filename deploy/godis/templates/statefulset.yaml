@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+    name: {{ include "godis.fullname" . }}
+    namespace: {{ .Release.namespace  }}
+    labels: {{ include "godis.labels" . | nindent 4 }}
+spec:
+    selector:
+        matchLabels: {{ include "godis.selectorLabels" . | nindent 6 }}
+    serviceName: {{ include "godis.fullname" . }}
+    replicas: {{ .Values.replicas }}
+    template:
+        metadata:
+            name: {{ include "godis.fullname" . }}
+            labels: {{ include "godis.labels" . | nindent 8 }}
+        spec:
+            containers:
+            - name: {{ include "godis.fullname" . }}
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag}}"
+              volumeMounts:
+              - name: datadir
+                mountPath: /var/run/godis
+    volumeClaimTemplates:
+    - metadata:
+            name: datadir
+        spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+                requests:
+                    storage: {{ .Values.storage }}
