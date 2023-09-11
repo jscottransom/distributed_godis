@@ -6,23 +6,27 @@ import (
 	"net"
 	api "github.com/jscottransom/distributed_godis/api"
 	store "github.com/jscottransom/distributed_godis/internal/kvstore"
+	kmap "github.com/jscottransom/distributed_godis/internal/keymap"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type grpcServer struct {
 	api.UnimplementedGodisServiceServer
 	store *store.KVstore
+	keymap kmap.SafeMap
 }
 
 // Build a new grpc server
 func newgrpcServer(store *store.KVstore) (*grpcServer, error) {
-	return &grpcServer{store: store}, nil
+	
+	mapobj := make(kmap.KeyMap, 0)
+	return &grpcServer{store: store,
+						keymap: kmap.SafeMap{Map: mapobj}}, nil
 }
 
 // Initialize a new GRPC server at the given port
-func InitGRPCServer(port string, path string) (*grpc.Server, error) {
+func InitGRPCServer(port string, path string, uid uint64) (*grpc.Server, error) {
 	
 	// Create a listener on a port for incoming TCP connections
 	lis, err := net.Listen("tcp", port)
@@ -31,7 +35,7 @@ func InitGRPCServer(port string, path string) (*grpc.Server, error) {
 		return nil, err
 	}
 
-	kvstore, err := store.NewKVstore(path)
+	kvstore, err := store.NewKVstore(path, uid)
 	if err != nil {
 		log.Fatalf("failed to create store: %s", err)
 	}
@@ -47,7 +51,6 @@ func InitGRPCServer(port string, path string) (*grpc.Server, error) {
 		log.Fatalf("failed to serve: %s", err)
 	}
 
-
 	return grpcsrv, nil
 
 }
@@ -56,29 +59,46 @@ func InitGRPCServer(port string, path string) (*grpc.Server, error) {
 func (s *grpcServer) SetKey(ctx context.Context, req *api.SetRequest) (*api.SetResponse, error) {
 
 	// Set the key in the store
-	if err := s.store.Set(req.Key, req.Value); err != nil {
+	record := store.Record{Key: req.Key,
+						   Value: req.Value}
+	
+	
+	lastOffset, err := s.store.Set(record)
+	if err != nil {
 		fmt.Printf("Unable to set key: %s", req.Key)
 		return nil, err
 	}
-	fmt.Printf("Setting key: %s to value -> %s", req.Key, req.Value)
-	return &api.SetResponse{Key: req.Key}, nil
+
+	// Get the number of bytes for the value
+	valueLen := uint64(len(req.Value))
+	
+	// Update the key in the keymap, and save the map
+	keyinfo := kmap.KeyInfo{Size: valueLen,
+						   Offset: uint64(lastOffset) - valueLen}
+	s.keymap.Lock()
+	defer s.keymap.Unlock()
+	s.keymap.Map[record.Key] = keyinfo
+	s.keymap.SaveMap("keymap", 1)
+
+	// Set the satisfactory message
+	msg := "OK"
+	return &api.SetResponse{Response: msg}, nil
 
 }
 func (s *grpcServer) GetKey(ctx context.Context, req *api.GetRequest) (*api.GetResponse, error) {
-	
-	// Getthe key in the store
-	val, err := s.store.Get(req.Key);
-	if err != nil {
-		fmt.Printf("Unable to get key: %s", req.Key)
-		return nil, err
-	}
-	fmt.Printf("Getting the value for the following key: %s: value -> %s", req.Key, val)
+	s.keymap.RLock()
+	defer s.keymap.RUnlock()
+	s.keymap.LoadMap("keymap", 1)
 
-	response_val, err := structpb.NewValue(val)
+	keyInfo := s.keymap.Map[req.Key]
+
+	// Get the key in the store
+	val, err := s.store.Get(keyInfo.Offset, keyInfo.Size);
 	if err != nil {
 		fmt.Printf("Unable to get key: %s", req.Key)
 		return nil, err
 	}
-	return &api.GetResponse{Key: req.Key, Value: response_val}, nil
+
+	return &api.GetResponse{Value: val}, nil
 	
 }

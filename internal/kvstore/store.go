@@ -4,19 +4,19 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"path/filepath"
+	// "path/filepath"
 	"sync"
 )
 
 const (
-	STORE_TEMPLATE = "godis_kv_%d.kv"
+	STORE_TEMPLATE = "godis_kv"
 )
 
 // Record is a struct representing a key value pairing
 // Key must be a string and value must be a slice of bytes
 type Record struct {
-	key   string
-	value []byte
+	Key   string
+	Value []byte
 }
 
 type KVstore struct {
@@ -29,13 +29,20 @@ type KVstore struct {
 func NewKVstore(dir string, uid uint64) (*KVstore, error) {
 
 	// Create new if it doesn't exist
-	path := filepath.Join(dir, fmt.Sprintf(STORE_TEMPLATE, uid))
-	storefile, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	
+	// err := os.MkdirAll(p, os.ModePerm)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("error creating directories %w", err)
+	// }
+	storefile, err := os.Create("/Users/jscoran/godis/godis_kv")
 	if err != nil {
 		return nil, fmt.Errorf("error opening file for writing to store: %w", err)
 	}
 
 	stat, err := os.Stat(storefile.Name())
+	if err != nil {
+		return nil, fmt.Errorf("error getting file stats: %w", err)
+	}
 
 	// Get the current offset of the file by getting the size
 	offset := uint64(stat.Size())
@@ -48,15 +55,14 @@ func NewKVstore(dir string, uid uint64) (*KVstore, error) {
 }
 
 // Set the passed Key / Value pairing
-func (s *KVstore) set(record Record) (uint64, error) {
-	fmt.Printf("Setting the following values: %s, %s", record.key, string(record.value))
+func (s *KVstore) Set(record Record) (uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// Set the current offset to the value of the last offset in the store
 	currentoffset := s.nextoffset
 
-	key, err := s.buf.WriteString(record.key)
+	key, err := s.buf.WriteString(record.Key)
 	if err != nil {
 		return 0, err
 	}
@@ -65,7 +71,7 @@ func (s *KVstore) set(record Record) (uint64, error) {
 	currentoffset += uint64(key)
 
 	// Write the values as bytes to the buffer
-	value, err := s.buf.Write(record.value)
+	value, err := s.buf.Write(record.Value)
 	if err != nil {
 		return 0, err
 	}
@@ -83,7 +89,7 @@ func (s *KVstore) set(record Record) (uint64, error) {
 // Get the value for the specified key from the store
 // Offset is the offset in the store to read
 // N is the number of bytes to read
-func (s *KVstore) get(offset uint64, n uint64) ([]byte, error) {
+func (s *KVstore) Get(offset uint64, n uint64) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
