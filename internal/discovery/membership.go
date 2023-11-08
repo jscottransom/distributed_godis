@@ -1,23 +1,23 @@
 package discovery
 
 import (
-	"net"
-	"go.uber.org/zap"
 	"github.com/hashicorp/serf/serf"
+	"go.uber.org/zap"
+	"net"
 )
 
 type Membership struct {
 	Config
 	handler Handler
-	serf *serf.Serf
-	events chan serf.Event
-	logger *zap.Logger
+	serf    *serf.Serf
+	events  chan serf.Event
+	logger  *zap.Logger
 }
 
 type Config struct {
-	NodeName string
-	BindAddr string
-	Tags map[string]string
+	NodeName       string
+	BindAddr       string
+	Tags           map[string]string
 	StartJoinAddrs []string
 }
 
@@ -28,9 +28,9 @@ type Handler interface {
 
 func New(handler Handler, config Config) (*Membership, error) {
 	c := &Membership{
-		Config: config,
+		Config:  config,
 		handler: handler,
-		logger: zap.L().Named("membership"),
+		logger:  zap.L().Named("membership"),
 	}
 	if err := c.setupSerf(); err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func (m *Membership) setupSerf() (err error) {
 	}
 
 	go m.eventHandler()
-	if m.StartJoinAddrs != nil  {
+	if m.StartJoinAddrs != nil {
 		_, err = m.serf.Join(m.StartJoinAddrs, true)
 		if err != nil {
 			return err
@@ -77,7 +77,7 @@ func (m *Membership) eventHandler() {
 
 		// Map the behavior to the type of event in the channel of serf Events
 		switch e.EventType() {
-		
+
 		// If a member joins the cluster
 		case serf.EventMemberJoin:
 			for _, member := range e.(serf.MemberEvent).Members {
