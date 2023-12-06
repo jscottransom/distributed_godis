@@ -26,15 +26,16 @@ type KVstore struct {
 	buf                    *bufio.Writer
 }
 
-func NewKVstore(dir string, uid uint64) (*KVstore, error) {
+func NewKVstore(dir string, name string) (*KVstore, error) {
 
 	// Create new if it doesn't exist
-	
-	// err := os.MkdirAll(p, os.ModePerm)
+	// err := os.MkdirAll(dir, os.ModePerm)
 	// if err != nil {
 	// 	return nil, fmt.Errorf("error creating directories %w", err)
 	// }
-	storefile, err := os.Create("/Users/jscoran/godis/godis_kv")
+
+	fileString := dir + "/" + name
+	storefile, err := os.Create(fileString)
 	if err != nil {
 		return nil, fmt.Errorf("error opening file for writing to store: %w", err)
 	}
@@ -105,9 +106,14 @@ func (s *KVstore) Get(offset uint64, n uint64) ([]byte, error) {
 
 	// Validate size of bytes read aligns with expectation
 	if val != int(n) {
-		return nil, fmt.Errorf("Error retrieving record due to incorrect byte size.")
+		return nil, fmt.Errorf("error retrieving record due to incorrect byte size")
 	}
 
 	return value, nil
 
+}
+
+func (s *KVstore) Remove(dir string) error {
+	// Get the Path of the file
+	return os.RemoveAll(dir)
 }

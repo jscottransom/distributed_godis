@@ -17,6 +17,8 @@ type grpcServer struct {
 	keymap kmap.SafeMap
 }
 
+
+
 // Build a new grpc server
 func newgrpcServer(store *store.KVstore) (*grpcServer, error) {
 	
@@ -25,8 +27,19 @@ func newgrpcServer(store *store.KVstore) (*grpcServer, error) {
 						keymap: kmap.SafeMap{Map: mapobj}}, nil
 }
 
+func NewGRPCServer(store *store.KVstore) (*grpc.Server, error) {
+	gsrv := grpc.NewServer()
+	srv, err := newgrpcServer(store)
+	if err != nil {
+		return nil, err
+	}
+
+	api.RegisterGodisServiceServer(gsrv, srv)
+	return gsrv, nil
+}
+
 // Initialize a new GRPC server at the given port
-func InitGRPCServer(port string, path string, uid uint64) (*grpc.Server, error) {
+func InitGRPCServer(port string, dir string, filename string, uid uint64) (*grpc.Server, error) {
 	
 	// Create a listener on a port for incoming TCP connections
 	lis, err := net.Listen("tcp", port)
@@ -35,23 +48,18 @@ func InitGRPCServer(port string, path string, uid uint64) (*grpc.Server, error) 
 		return nil, err
 	}
 
-	kvstore, err := store.NewKVstore(path, uid)
+	kvstore, err := store.NewKVstore(dir, filename)
 	if err != nil {
 		log.Fatalf("failed to create store: %s", err)
 	}
-	grpcsrv := grpc.NewServer()
-	srv, err := newgrpcServer(kvstore)
-	if err != nil {
-		return nil, err
-	}
+	
+	gsrv, nil := NewGRPCServer(kvstore)
 
-	api.RegisterGodisServiceServer(grpcsrv, srv)
-
-	if err := grpcsrv.Serve(lis); err != nil {
+	if err := gsrv.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %s", err)
 	}
 
-	return grpcsrv, nil
+	return gsrv, nil
 
 }
 
@@ -77,7 +85,7 @@ func (s *grpcServer) SetKey(ctx context.Context, req *api.SetRequest) (*api.SetR
 						   Offset: uint64(lastOffset) - valueLen}
 	s.keymap.Lock()
 	defer s.keymap.Unlock()
-	s.keymap.Map[record.Key] = keyinfo
+	s.keymap.Map[record.Key] = &keyinfo
 	s.keymap.SaveMap("keymap", 1)
 
 	// Set the satisfactory message
@@ -100,5 +108,17 @@ func (s *grpcServer) GetKey(ctx context.Context, req *api.GetRequest) (*api.GetR
 	}
 
 	return &api.GetResponse{Value: val}, nil
+	
+}
+
+func (s *grpcServer) ListKeys(ctx context.Context, req *api.ListRequest) (*api.ListResponse, error) {
+	keylist := []string{}
+
+	// Iterate through the list of keys
+	for k := range s.keymap.Map {
+		keylist = append(keylist, k)
+	}
+
+	return &api.ListResponse{Key: keylist}, nil
 	
 }

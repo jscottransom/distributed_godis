@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -23,13 +24,36 @@ func main(){
 	client := api.NewGodisServiceClient(cc)
 
 	// value := []byte("nah")
-	request := &api.GetRequest{Key: "This is from the client"}
-								// Value: value}
-	response, err := client.GetKey(context.Background(), request)
+	// request := &api.SetRequest{Key: "client",
+	// 							Value: value}
+	// response, err := client.SetKey(context.Background(), request)
+	// if err != nil {
+	// 	log.Fatalf("Error when calling SetRequest: %s", err)
+	// }
+
+	// fmt.Printf("Response from server: %s\n", response)
+
+	// newvalue := []byte("nah2")
+	// newrequest := &api.SetRequest{Key: "Test",
+	// 							Value: newvalue}
+	// newresponse, err := client.SetKey(context.Background(), newrequest)
+	// if err != nil {
+	// 	log.Fatalf("Error when calling SetRequest: %s", err)
+	// }
+
+	// fmt.Printf("Response from server: %s\n", newresponse)
+
+	listRequest := &api.ListRequest{}
+	listResponse, err := client.ListKeys(context.Background(), listRequest)
 	if err != nil {
-		log.Fatalf("Error when calling SetRequest: %s", err)
+		log.Fatalf("Error when calling ListKeys: %s", err)
 	}
-	fmt.Printf("Response from server: %s\n", response)
+
+		
 	
+	s := strings.Split(listResponse.Key[0], ",")
+	for _, k := range s {
+		fmt.Printf("Response from server: %s\n", k)
+	}
 
 }

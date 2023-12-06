@@ -3,6 +3,7 @@ package godis;
 
 option go_package = "github.com/jscottransom/distributed_godis/api/godis";
 
+
 message SetRequest {
    string key = 1;
    bytes value = 2;
@@ -20,7 +21,20 @@ message GetResponse {
     bytes value = 1;
 }
 
+message MapRequest {
+    string name = 1;
+}
+
+
+message ListRequest {}
+
+message Key string key = 1;
+message ListResponse {
+    repeated string key = 1;
+}
+
 service GodisService {
     rpc SetKey(SetRequest) returns (SetResponse) {}
     rpc GetKey(GetRequest) returns (GetResponse) {}
+    rpc ListKeys(ListRequest) returns (ListResponse) {}
 }

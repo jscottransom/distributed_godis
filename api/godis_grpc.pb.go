@@ -19,8 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	GodisService_SetKey_FullMethodName = "/godis.GodisService/SetKey"
-	GodisService_GetKey_FullMethodName = "/godis.GodisService/GetKey"
+	GodisService_SetKey_FullMethodName   = "/godis.GodisService/SetKey"
+	GodisService_GetKey_FullMethodName   = "/godis.GodisService/GetKey"
+	GodisService_ListKeys_FullMethodName = "/godis.GodisService/ListKeys"
 )
 
 // GodisServiceClient is the client API for GodisService service.
@@ -29,6 +30,7 @@ const (
 type GodisServiceClient interface {
 	SetKey(ctx context.Context, in *SetRequest, opts ...grpc.CallOption) (*SetResponse, error)
 	GetKey(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
+	ListKeys(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error)
 }
 
 type godisServiceClient struct {
@@ -57,12 +59,22 @@ func (c *godisServiceClient) GetKey(ctx context.Context, in *GetRequest, opts ..
 	return out, nil
 }
 
+func (c *godisServiceClient) ListKeys(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error) {
+	out := new(ListResponse)
+	err := c.cc.Invoke(ctx, GodisService_ListKeys_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GodisServiceServer is the server API for GodisService service.
 // All implementations must embed UnimplementedGodisServiceServer
 // for forward compatibility
 type GodisServiceServer interface {
 	SetKey(context.Context, *SetRequest) (*SetResponse, error)
 	GetKey(context.Context, *GetRequest) (*GetResponse, error)
+	ListKeys(context.Context, *ListRequest) (*ListResponse, error)
 	mustEmbedUnimplementedGodisServiceServer()
 }
 
@@ -75,6 +87,9 @@ func (UnimplementedGodisServiceServer) SetKey(context.Context, *SetRequest) (*Se
 }
 func (UnimplementedGodisServiceServer) GetKey(context.Context, *GetRequest) (*GetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetKey not implemented")
+}
+func (UnimplementedGodisServiceServer) ListKeys(context.Context, *ListRequest) (*ListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListKeys not implemented")
 }
 func (UnimplementedGodisServiceServer) mustEmbedUnimplementedGodisServiceServer() {}
 
@@ -125,6 +140,24 @@ func _GodisService_GetKey_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GodisService_ListKeys_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GodisServiceServer).ListKeys(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GodisService_ListKeys_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GodisServiceServer).ListKeys(ctx, req.(*ListRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // GodisService_ServiceDesc is the grpc.ServiceDesc for GodisService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -139,6 +172,10 @@ var GodisService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetKey",
 			Handler:    _GodisService_GetKey_Handler,
+		},
+		{
+			MethodName: "ListKeys",
+			Handler:    _GodisService_ListKeys_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-	srv, err := server.InitGRPCServer(":0", "/godis", 1)
+	srv, err := server.InitGRPCServer(":9001", "/godis", 1)
 	if err != nil {
 		fmt.Println(err)
 	}
