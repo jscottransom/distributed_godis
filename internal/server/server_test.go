@@ -2,21 +2,39 @@ package server
 
 import (
 	"context"
+	"flag"
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	api "github.com/jscottransom/distributed_godis/api"
+	"github.com/jscottransom/distributed_godis/internal/auth"
 	"github.com/jscottransom/distributed_godis/internal/config"
 	kmap "github.com/jscottransom/distributed_godis/internal/keymap"
 	store "github.com/jscottransom/distributed_godis/internal/kvstore"
-	"github.com/jscottransom/distributed_godis/internal/auth"
 	"github.com/stretchr/testify/require"
+	"go.opencensus.io/examples/exporter"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 )
+
+var debug = flag.Bool("debug", false, "Enable observability for debugging.")
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if *debug {
+		logger, err := zap.NewDevelopment()
+		if err != nil {
+			panic(err)
+		}
+		zap.ReplaceGlobals(logger)
+	}
+	os.Exit(m.Run())
+}
 
 func TestServer(t *testing.T) {
 	for scenario, fn := range map[string]func(
@@ -25,19 +43,19 @@ func TestServer(t *testing.T) {
 		nobodyClient api.GodisServiceClient,
 		config *Config,
 	){
-		"Set a Key in store succeeds": testSetGetKey,
+		"Set a Key in store succeeds":       testSetGetKey,
 		"List all keys from store succeeds": testListKey,
-		"Unauthorized Fails": testUnauthorized,
+		"Unauthorized Fails":                testUnauthorized,
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			rootClient,
-			nobodyClient,
-			config,
-			teardown := setupTest(t, nil)
+				nobodyClient,
+				config,
+				teardown := setupTest(t, nil)
 			defer teardown()
 			fn(t, rootClient, nobodyClient, config)
 		})
-	
+
 	}
 }
 
@@ -47,8 +65,29 @@ func setupTest(t *testing.T, fn func(*Config)) (
 	cfg *Config,
 	teardown func(),
 ) {
-	
+
 	authorizer := auth.New(config.ACLModelFile, config.ACLPolicyFile)
+
+	var telemetryExporter *exporter.LogExporter
+	if *debug {
+		metricsLogFile, err := os.CreateTemp("", "metrics-*.log")
+		require.NoError(t, err)
+		t.Logf("metrics log file: %s", metricsLogFile.Name())
+
+		tracesLogFile, err := os.CreateTemp("", "traces-*.log")
+		require.NoError(t, err)
+		t.Logf("traces log file: %s", tracesLogFile.Name())
+
+		telemetryExporter, err = exporter.NewLogExporter(exporter.Options{
+			MetricsLogFile:    metricsLogFile.Name(),
+			TracesLogFile:     tracesLogFile.Name(),
+			ReportingInterval: time.Second,
+		})
+		require.NoError(t, err)
+		err = telemetryExporter.Start()
+		require.NoError(t, err)
+
+	}
 	// Marks as a test heelper function
 	t.Helper()
 
@@ -62,9 +101,9 @@ func setupTest(t *testing.T, fn func(*Config)) (
 	) {
 		tlsConfig, err := config.SetupTLSConfig(config.TLSConfig{
 			CertFile: crtPath,
-			KeyFile: keyPath,
-			CAFile: config.CAFile,
-			Server: false,
+			KeyFile:  keyPath,
+			CAFile:   config.CAFile,
+			Server:   false,
 		})
 
 		require.NoError(t, err)
@@ -90,30 +129,29 @@ func setupTest(t *testing.T, fn func(*Config)) (
 	)
 
 	serverTLSConfig, err := config.SetupTLSConfig(config.TLSConfig{
-		CertFile: config.ServerCertFile,
-		KeyFile: config.ServerKeyFile,
-		CAFile: config.CAFile,
+		CertFile:      config.ServerCertFile,
+		KeyFile:       config.ServerKeyFile,
+		CAFile:        config.CAFile,
 		ServerAddress: l.Addr().String(),
-		Server: true,
+		Server:        true,
 	})
 
 	require.NoError(t, err)
 	serverCreds := credentials.NewTLS(serverTLSConfig)
-	cwd, err:= os.Getwd()
+	cwd, err := os.Getwd()
 	require.NoError(t, err)
 	dir, err := os.MkdirTemp(cwd, "server-test")
 	require.NoError(t, err)
 
 	t.Log(dir)
-	
 
 	kvstore, err := store.NewKVstore(dir, "testStore")
 	mapobj := make(kmap.KeyMap, 0)
 	require.NoError(t, err)
 
 	cfg = &Config{Store: kvstore,
-				  Keymap: kmap.SafeMap{Map:mapobj},
-				Authorizer: authorizer}
+		Keymap:     kmap.SafeMap{Map: mapobj},
+		Authorizer: authorizer}
 
 	if fn != nil {
 		fn(cfg)
@@ -131,6 +169,11 @@ func setupTest(t *testing.T, fn func(*Config)) (
 		nobodyConn.Close()
 		l.Close()
 		kvstore.Remove(dir)
+		if telemetryExporter != nil {
+			time.Sleep(1500 * time.Millisecond)
+			telemetryExporter.Stop()
+			telemetryExporter.Close()
+		}
 	}
 }
 
@@ -139,8 +182,8 @@ func testSetGetKey(t *testing.T, client, _ api.GodisServiceClient, config *Confi
 
 	want := &api.SetRequest{Key: "hello", Value: []byte("world")}
 	_, err := client.SetKey(ctx, &api.SetRequest{Key: "hello",
-								 Value: []byte("world")})
-	
+		Value: []byte("world")})
+
 	require.NoError(t, err)
 	get, err := client.GetKey(ctx, &api.GetRequest{Key: "hello"})
 
@@ -154,25 +197,25 @@ func testListKey(t *testing.T, client, _ api.GodisServiceClient, config *Config)
 
 	first := &api.SetRequest{Key: "hello", Value: []byte("world")}
 	second := &api.SetRequest{Key: "strange", Value: []byte("fruits")}
-	
+
 	keyRef := make([]string, 2)
 
 	keyRef = append(keyRef, first.Key)
 	keyRef = append(keyRef, second.Key)
 
 	_, err := client.SetKey(ctx, &api.SetRequest{Key: "hello",
-								 Value: []byte("world")})
-	
+		Value: []byte("world")})
+
 	require.NoError(t, err)
 
 	res, err := client.SetKey(ctx, &api.SetRequest{Key: "strange",
-								 Value: []byte("fruits")})
-	
+		Value: []byte("fruits")})
+
 	require.NoError(t, err)
 	t.Log(res)
-	
+
 	list, err := client.ListKeys(ctx, &api.ListRequest{})
-	
+
 	finalList := make([]string, 2)
 	finalList = append(finalList, list.Key...)
 
@@ -185,7 +228,7 @@ func testUnauthorized(t *testing.T, _, client api.GodisServiceClient, config *Co
 
 	ctx := context.Background()
 	set, err := client.SetKey(ctx, &api.SetRequest{Key: "hello",
-								 Value: []byte("world")})
+		Value: []byte("world")})
 
 	if set != nil {
 		t.Fatalf("Set response should be nil")
