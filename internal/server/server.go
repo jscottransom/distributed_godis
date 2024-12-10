@@ -9,27 +9,50 @@ import (
 	kmap "github.com/jscottransom/distributed_godis/internal/keymap"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
+
+type Config struct {
+	Store *store.KVstore
+	Keymap kmap.SafeMap
+	Authorizer Authorizer
+}
+
+const (
+	objectWildCard = "*"
+	setgetAction = "setget"
+	listAction = "list"
+)
+
+type Authorizer interface {
+	Authorize(subject, object, action string) error
+}
 
 type grpcServer struct {
 	api.UnimplementedGodisServiceServer
-	store *store.KVstore
-	keymap kmap.SafeMap
+	*Config
 }
-
 
 
 // Build a new grpc server
-func newgrpcServer(store *store.KVstore) (*grpcServer, error) {
-	
-	mapobj := make(kmap.KeyMap, 0)
-	return &grpcServer{store: store,
-						keymap: kmap.SafeMap{Map: mapobj}}, nil
+func newgrpcServer(config *Config) (*grpcServer, error) {
+	return &grpcServer{
+						Config: config,}, nil
 }
 
-func NewGRPCServer(store *store.KVstore) (*grpc.Server, error) {
-	gsrv := grpc.NewServer()
-	srv, err := newgrpcServer(store)
+func NewGRPCServer(config *Config, opts ...grpc.ServerOption) (*grpc.Server, error) {
+	
+	opts = append(opts, grpc.StreamInterceptor(grpc_middleware.ChainStreamServer(grpc_auth.StreamServerInterceptor(authenticate),
+		   )), grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(grpc_auth.UnaryServerInterceptor(authenticate),
+	)))
+	
+	gsrv := grpc.NewServer(opts...)
+	srv, err := newgrpcServer(config)
 	if err != nil {
 		return nil, err
 	}
@@ -52,8 +75,14 @@ func InitGRPCServer(port string, dir string, filename string, uid uint64) (*grpc
 	if err != nil {
 		log.Fatalf("failed to create store: %s", err)
 	}
+
+	mapobj := make(kmap.KeyMap, 0)
+	config := &Config{
+		Store: kvstore,
+		Keymap: kmap.SafeMap{Map:mapobj},
+	}
 	
-	gsrv, nil := NewGRPCServer(kvstore)
+	gsrv, nil := NewGRPCServer(config)
 
 	if err := gsrv.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %s", err)
@@ -63,15 +92,19 @@ func InitGRPCServer(port string, dir string, filename string, uid uint64) (*grpc
 
 }
 
-
 func (s *grpcServer) SetKey(ctx context.Context, req *api.SetRequest) (*api.SetResponse, error) {
 
+	if err := s.Authorizer.Authorize(subject(ctx), objectWildCard, setgetAction,
+	); err != nil {
+		log.Printf("Error is %s{}\n", err)
+		return nil, err
+	}
+	
 	// Set the key in the store
 	record := store.Record{Key: req.Key,
 						   Value: req.Value}
 	
-	
-	lastOffset, err := s.store.Set(record)
+	lastOffset, err := s.Config.Store.Set(record)
 	if err != nil {
 		fmt.Printf("Unable to set key: %s", req.Key)
 		return nil, err
@@ -83,25 +116,33 @@ func (s *grpcServer) SetKey(ctx context.Context, req *api.SetRequest) (*api.SetR
 	// Update the key in the keymap, and save the map
 	keyinfo := kmap.KeyInfo{Size: valueLen,
 						   Offset: uint64(lastOffset) - valueLen}
-	s.keymap.Lock()
-	defer s.keymap.Unlock()
-	s.keymap.Map[record.Key] = &keyinfo
-	s.keymap.SaveMap("keymap", 1)
+	s.Config.Keymap.Lock()
+	defer s.Config.Keymap.Unlock()
+	s.Config.Keymap.Map[record.Key] = &keyinfo
+	s.Config.Keymap.SaveMap("keymap", 1)
 
 	// Set the satisfactory message
 	msg := "OK"
 	return &api.SetResponse{Response: msg}, nil
 
 }
-func (s *grpcServer) GetKey(ctx context.Context, req *api.GetRequest) (*api.GetResponse, error) {
-	s.keymap.RLock()
-	defer s.keymap.RUnlock()
-	s.keymap.LoadMap("keymap", 1)
 
-	keyInfo := s.keymap.Map[req.Key]
+func (s *grpcServer) GetKey(ctx context.Context, req *api.GetRequest) (*api.GetResponse, error) {
+	if err := s.Authorizer.Authorize(subject(ctx), objectWildCard, setgetAction,
+	); err != nil {
+		log.Printf("Error is %s{}\n", err)
+		return nil, err
+	}
+	
+	
+	s.Config.Keymap.RLock()
+	defer s.Config.Keymap.RUnlock()
+	s.Config.Keymap.LoadMap("keymap", 1)
+
+	keyInfo := s.Config.Keymap.Map[req.Key]
 
 	// Get the key in the store
-	val, err := s.store.Get(keyInfo.Offset, keyInfo.Size);
+	val, err := s.Config.Store.Get(keyInfo.Offset, keyInfo.Size);
 	if err != nil {
 		fmt.Printf("Unable to get key: %s", req.Key)
 		return nil, err
@@ -112,13 +153,45 @@ func (s *grpcServer) GetKey(ctx context.Context, req *api.GetRequest) (*api.GetR
 }
 
 func (s *grpcServer) ListKeys(ctx context.Context, req *api.ListRequest) (*api.ListResponse, error) {
+	if err := s.Authorizer.Authorize(subject(ctx), objectWildCard, listAction,
+	); err != nil {
+		log.Printf("Error is %s{}\n", err)
+		return nil, err
+	}
+	
 	keylist := []string{}
 
 	// Iterate through the list of keys
-	for k := range s.keymap.Map {
+	for k := range s.Config.Keymap.Map {
 		keylist = append(keylist, k)
 	}
 
 	return &api.ListResponse{Key: keylist}, nil
 	
 }
+
+func authenticate(ctx context.Context) (context.Context, error) {
+	peer, ok := peer.FromContext(ctx)
+	if !ok {
+		return ctx, status.New(
+				codes.Unknown,
+				"couldn't find peer info",).Err()
+	
+	}
+
+	if peer.AuthInfo == nil {
+		return context.WithValue(ctx, subjectContextKey{}, ""), nil
+	}
+
+	tlsInfo := peer.AuthInfo.(credentials.TLSInfo)
+	subject := tlsInfo.State.VerifiedChains[0][0].Subject.CommonName
+	ctx = context.WithValue(ctx, subjectContextKey{}, subject)
+
+	return ctx, nil
+}
+
+func subject(ctx context.Context) string {
+	return ctx.Value(subjectContextKey{}).(string)
+}
+
+type subjectContextKey struct{}

@@ -4,21 +4,21 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
+	"os"
 )
 
 func SetupTLSConfig(cfg TLSConfig) (*tls.Config, error) {
 	var err error
 	tlsConfig := &tls.Config{}
 	if cfg.CertFile != "" && cfg.KeyFile != "" {
-		tlsConfig.Certificates = make([]tls.Certificatee, 1)
+		tlsConfig.Certificates = make([]tls.Certificate, 1)
 		tlsConfig.Certificates[0], err = tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile,)
 		if err != nil {
 			return nil, err
 		}
 	}
 	if cfg.CAFile != "" {
-		b, err := ioutil.ReadFile(cfg.CAFile) // Returns a slice of bytes
+		b, err := os.ReadFile(cfg.CAFile) // Returns a slice of bytes
 		if err != nil {
 			return nil, err
 		}

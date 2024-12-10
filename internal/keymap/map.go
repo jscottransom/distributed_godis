@@ -49,7 +49,7 @@ func (k *SafeMap) SaveMap(dir string, uid uint64) error {
 
 }
 
-func (k *SafeMap) LoadMap(dir string, uid uint64) error {
+func (k *SafeMap)LoadMap(dir string, uid uint64) error {
 
 	// path := filepath.Join(dir, fmt.Sprintf(MAP_TEMPLATE, uid))
 	mapfile, err := os.Open("/Users/jscoran/godis/godis_keymap")
