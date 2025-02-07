@@ -2,23 +2,25 @@ package server
 
 import (
 	"fmt"
-	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
-	grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
-	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
-	api "github.com/jscottransom/distributed_godis/api"
-	kmap "github.com/jscottransom/distributed_godis/internal/keymap"
-	store "github.com/jscottransom/distributed_godis/internal/kvstore"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
+	"io"
 	"log"
 	"net"
 	"time"
+
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
+	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
+	api "github.com/jscottransom/distributed_godis/api"
+	kmap "github.com/jscottransom/distributed_godis/internal/keymap"
+	store "github.com/jscottransom/distributed_godis/internal/kvstore"
 	"go.opencensus.io/plugin/ocgrpc"
 	"go.opencensus.io/stats/view"
 	"go.opencensus.io/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
@@ -56,13 +58,13 @@ func NewGRPCServer(config *Config, opts ...grpc.ServerOption) (*grpc.Server, err
 
 	logger := zap.L().Named("server")
 	zapOpts := []grpc_zap.Option{grpc_zap.WithDurationField(
-					func(duration time.Duration) zapcore.Field {
-						return zap.Int64(
-							"grpc.time_ns",
-							 duration.Nanoseconds(),
-						)
-					},
-				),
+		func(duration time.Duration) zapcore.Field {
+			return zap.Int64(
+				"grpc.time_ns",
+				duration.Nanoseconds(),
+			)
+		},
+	),
 	}
 
 	// TODO: Possibly consider updating this to trace only 50% of the time
@@ -78,9 +80,9 @@ func NewGRPCServer(config *Config, opts ...grpc.ServerOption) (*grpc.Server, err
 				grpc_zap.StreamServerInterceptor(logger, zapOpts...),
 				grpc_auth.StreamServerInterceptor(authenticate),
 			)), grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
-				grpc_ctxtags.UnaryServerInterceptor(),
-				grpc_zap.UnaryServerInterceptor(logger, zapOpts...),
-				grpc_auth.UnaryServerInterceptor(authenticate),
+			grpc_ctxtags.UnaryServerInterceptor(),
+			grpc_zap.UnaryServerInterceptor(logger, zapOpts...),
+			grpc_auth.UnaryServerInterceptor(authenticate),
 		)),
 		grpc.StatsHandler(&ocgrpc.ServerHandler{}),
 	)
@@ -179,7 +181,9 @@ func (s *grpcServer) GetKey(ctx context.Context, req *api.GetRequest) (*api.GetR
 		return nil, err
 	}
 
-	return &api.GetResponse{Value: val}, nil
+	return &api.GetResponse{
+		Key: req.Key,
+		Value: val}, nil
 
 }
 
@@ -198,6 +202,63 @@ func (s *grpcServer) ListKeys(ctx context.Context, req *api.ListRequest) (*api.L
 
 	return &api.ListResponse{Key: keylist}, nil
 
+}
+
+func (s *grpcServer) SetStream(stream grpc.BidiStreamingServer[api.SetRequest, api.SetResponse]) error {
+
+	var keysSet []string
+
+	for {
+
+		req := new(api.SetRequest)
+
+		err := stream.RecvMsg(req)
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			log.Printf("Error while receiving message: %v", err)
+			return status.Errorf(codes.Internal, "Failed to process stream: %v", err)
+		}
+
+		res, err := s.SetKey(stream.Context(), req)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Stored key: %s with value size: %d bytes", res.Response, len(req.Value))
+		keysSet = append(keysSet, req.Key)
+
+		fmt.Sprintf("Response %s", res)
+		if err != nil {
+			return err
+		}
+		err = stream.SendMsg(res)
+		if err != nil {
+			return status.Errorf(codes.Internal, "Failed to send response: %v", err)
+		}
+	}
+	return nil
+}
+
+func (s *grpcServer) GetStream(req *api.MultiGetRequest, stream grpc.ServerStreamingServer[api.GetResponse]) error {
+
+	fmt.Sprintf("Streaming the following keys: %s", req.Keys)
+	
+	for _, key := range req.Keys {
+		resp, err := s.GetKey(stream.Context(), &api.GetRequest{Key: key})
+		
+		
+		if err != nil {
+            return status.Errorf(codes.Internal, "Failed to retrieve key %s: %v", key, err)
+        }
+        
+        // Send the response back to the client
+        if err := stream.SendMsg(resp); err != nil {
+            return status.Errorf(codes.Internal, "Failed to send message: %v", err)
+        }
+	}
+	return nil
 }
 
 func authenticate(ctx context.Context) (context.Context, error) {

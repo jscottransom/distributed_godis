@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+
 	// "path/filepath"
 	"sync"
 )
@@ -114,6 +115,6 @@ func (s *KVstore) Get(offset uint64, n uint64) ([]byte, error) {
 }
 
 func (s *KVstore) Remove(dir string) error {
-	// Get the Path of the file
+	
 	return os.RemoveAll(dir)
 }

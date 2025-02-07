@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 	"time"
+	"io"
 
 	api "github.com/jscottransom/distributed_godis/api"
 	"github.com/jscottransom/distributed_godis/internal/auth"
@@ -46,6 +47,7 @@ func TestServer(t *testing.T) {
 		"Set a Key in store succeeds":       testSetGetKey,
 		"List all keys from store succeeds": testListKey,
 		"Unauthorized Fails":                testUnauthorized,
+		"Set and Get Stream": testSetGetStream,
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			rootClient,
@@ -186,7 +188,6 @@ func testSetGetKey(t *testing.T, client, _ api.GodisServiceClient, config *Confi
 
 	require.NoError(t, err)
 	get, err := client.GetKey(ctx, &api.GetRequest{Key: "hello"})
-
 	require.NoError(t, err)
 	require.Equal(t, want.Value, get.Value)
 
@@ -215,7 +216,6 @@ func testListKey(t *testing.T, client, _ api.GodisServiceClient, config *Config)
 	t.Log(res)
 
 	list, err := client.ListKeys(ctx, &api.ListRequest{})
-
 	finalList := make([]string, 2)
 	finalList = append(finalList, list.Key...)
 
@@ -223,6 +223,63 @@ func testListKey(t *testing.T, client, _ api.GodisServiceClient, config *Config)
 	require.Equal(t, keyRef, finalList)
 
 }
+
+func testSetGetStream(
+	t *testing.T, client, _ api.GodisServiceClient, config *Config,
+) {
+	ctx := context.Background()
+
+	requests := []*api.SetRequest{
+		{Key: "hello", Value: []byte("world")},
+		{Key: "strange", Value: []byte("fruits")},
+	}
+	stream, err := client.SetStream(ctx)
+	require.NoError(t, err)
+
+	for _, request := range requests {
+		err = stream.SendMsg(request)
+		require.NoError(t, err)
+		
+	}
+
+	for i := 0; i < len(requests); i++ {
+		resp, err := stream.Recv()
+		require.NoError(t, err)
+		t.Logf("%s", resp)
+	}
+
+	err = stream.CloseSend()
+	require.NoError(t, err)
+
+	
+	keys := []string{"hello", "strange"}
+	keysToGet := &api.MultiGetRequest{
+		Keys: keys,
+	}
+	getStream, err := client.GetStream(context.Background(), keysToGet) 
+	if err != nil {
+		t.Fatalf("Error calling GetStream %v", err)
+	}
+	var responses []*api.GetResponse
+	for  {
+		
+		resp, err := getStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Error receiving %v", err)
+		}
+		responses = append(responses, resp)
+		require.NoError(t, err)
+		t.Logf("%s", resp)
+	}
+
+	// require.Equal(t, len(keysToGet), len(responses), "The number of responses should match the number of requested keys")
+	
+}
+
+
 
 func testUnauthorized(t *testing.T, _, client api.GodisServiceClient, config *Config) {
 
