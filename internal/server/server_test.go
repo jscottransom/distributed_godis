@@ -12,7 +12,6 @@ import (
 	api "github.com/jscottransom/distributed_godis/api"
 	"github.com/jscottransom/distributed_godis/internal/auth"
 	"github.com/jscottransom/distributed_godis/internal/config"
-	kmap "github.com/jscottransom/distributed_godis/internal/keymap"
 	store "github.com/jscottransom/distributed_godis/internal/kvstore"
 	"github.com/stretchr/testify/require"
 	"go.opencensus.io/examples/exporter"
@@ -148,11 +147,9 @@ func setupTest(t *testing.T, fn func(*Config)) (
 	t.Log(dir)
 
 	kvstore, err := store.NewKVstore(dir, "testStore")
-	mapobj := make(kmap.KeyMap, 0)
 	require.NoError(t, err)
 
 	cfg = &Config{Store: kvstore,
-		Keymap:     kmap.SafeMap{Map: mapobj},
 		Authorizer: authorizer}
 
 	if fn != nil {

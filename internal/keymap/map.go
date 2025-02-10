@@ -4,6 +4,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"os"
+
 	// "path/filepath"
 	"sync"
 )
@@ -22,25 +23,41 @@ type KeyInfo struct {
 type KeyMap map[string]*KeyInfo
 
 type SafeMap struct {
-	sync.RWMutex
-	Map KeyMap
+	File  		*os.File
+	FileLock  sync.RWMutex
+	Map   	  KeyMap
 }
+
+
+// Instantiate a New SafeMap based on the directory of the KV Store
+func NewMap(dir string) (*SafeMap, error) {
+	// Create new if it doesn't exist
+	mapString := dir + "/" + "keymap"
+	mapFile, err := os.Create(mapString)
+	if err != nil {
+		fmt.Errorf("error opening file for writing Keymap: %w", err)
+		return nil, err
+	}
+
+	mapobj := make(KeyMap, 0)
+
+	return &SafeMap{
+		File: mapFile,
+		FileLock: sync.RWMutex{},
+		Map: mapobj,
+	}, nil
+
+
+} 
 
 // The following methods
 // As the KeyMap is Updated, the map will be saved to a file
-func (k *SafeMap) SaveMap(dir string, uid uint64) error {
+func (k *SafeMap) SaveMap() error {
 
-	// Create new if it doesn't exist
-	mapfile, err := os.Create("/Users/jscoran/godis/godis_keymap")
-	if err != nil {
-		return fmt.Errorf("error creating file for writing to keymap: %w", err)
-	}
-
-	defer mapfile.Close()
-
+	defer k.File.Close()
 	// Instantiate a new Gob Encoder
-	enc := gob.NewEncoder(mapfile)
-	err = enc.Encode(k.Map)
+	enc := gob.NewEncoder(k.File)
+	err := enc.Encode(k.Map)
 	if err != nil {
 		return fmt.Errorf("error saving KeyMap: %w", err)
 	}
@@ -49,18 +66,12 @@ func (k *SafeMap) SaveMap(dir string, uid uint64) error {
 
 }
 
-func (k *SafeMap)LoadMap(dir string, uid uint64) error {
+func (k *SafeMap) LoadMap() error {
 
-	// path := filepath.Join(dir, fmt.Sprintf(MAP_TEMPLATE, uid))
-	mapfile, err := os.Open("/Users/jscoran/godis/godis_keymap")
-	if err != nil {
-		return fmt.Errorf("error opening file for writing to store: %w", err)
-	}
-
-	defer mapfile.Close()
+	defer k.File.Close()
 
 	// Instantiate a new Gob Encoder
-	enc := gob.NewDecoder(mapfile)
+	enc := gob.NewDecoder(k.File)
 	if err := enc.Decode(&k.Map); err != nil {
 		return fmt.Errorf("error loading KeyMap: %w", err)
 	}

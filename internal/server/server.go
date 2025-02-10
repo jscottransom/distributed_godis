@@ -12,7 +12,6 @@ import (
 	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
 	api "github.com/jscottransom/distributed_godis/api"
-	kmap "github.com/jscottransom/distributed_godis/internal/keymap"
 	store "github.com/jscottransom/distributed_godis/internal/kvstore"
 	"go.opencensus.io/plugin/ocgrpc"
 	"go.opencensus.io/stats/view"
@@ -29,7 +28,6 @@ import (
 
 type Config struct {
 	Store      *store.KVstore
-	Keymap     kmap.SafeMap
 	Authorizer Authorizer
 }
 
@@ -112,10 +110,8 @@ func InitGRPCServer(port string, dir string, filename string, uid uint64) (*grpc
 		log.Fatalf("failed to create store: %s", err)
 	}
 
-	mapobj := make(kmap.KeyMap, 0)
 	config := &Config{
 		Store:  kvstore,
-		Keymap: kmap.SafeMap{Map: mapobj},
 	}
 
 	gsrv, nil := NewGRPCServer(config)
@@ -139,22 +135,11 @@ func (s *grpcServer) SetKey(ctx context.Context, req *api.SetRequest) (*api.SetR
 	record := store.Record{Key: req.Key,
 		Value: req.Value}
 
-	lastOffset, err := s.Config.Store.Set(record)
+	err := s.Config.Store.Set(record)
 	if err != nil {
 		fmt.Printf("Unable to set key: %s", req.Key)
 		return nil, err
 	}
-
-	// Get the number of bytes for the value
-	valueLen := uint64(len(req.Value))
-
-	// Update the key in the keymap, and save the map
-	keyinfo := kmap.KeyInfo{Size: valueLen,
-		Offset: uint64(lastOffset) - valueLen}
-	s.Config.Keymap.Lock()
-	defer s.Config.Keymap.Unlock()
-	s.Config.Keymap.Map[record.Key] = &keyinfo
-	s.Config.Keymap.SaveMap("keymap", 1)
 
 	// Set the satisfactory message
 	msg := "OK"
@@ -168,14 +153,8 @@ func (s *grpcServer) GetKey(ctx context.Context, req *api.GetRequest) (*api.GetR
 		return nil, err
 	}
 
-	s.Config.Keymap.RLock()
-	defer s.Config.Keymap.RUnlock()
-	s.Config.Keymap.LoadMap("keymap", 1)
-
-	keyInfo := s.Config.Keymap.Map[req.Key]
-
 	// Get the key in the store
-	val, err := s.Config.Store.Get(keyInfo.Offset, keyInfo.Size)
+	val, err := s.Config.Store.Get(req.Key)
 	if err != nil {
 		fmt.Printf("Unable to get key: %s", req.Key)
 		return nil, err
@@ -196,7 +175,7 @@ func (s *grpcServer) ListKeys(ctx context.Context, req *api.ListRequest) (*api.L
 	keylist := []string{}
 
 	// Iterate through the list of keys
-	for k := range s.Config.Keymap.Map {
+	for k := range s.Config.Store.Keymap.Map {
 		keylist = append(keylist, k)
 	}
 

@@ -13,7 +13,6 @@ import (
 	api "github.com/jscottransom/distributed_godis/api"
 	"github.com/jscottransom/distributed_godis/internal/auth"
 	"github.com/jscottransom/distributed_godis/internal/discovery"
-	kmap "github.com/jscottransom/distributed_godis/internal/keymap"
 	"github.com/jscottransom/distributed_godis/internal/kvstore"
 	"github.com/jscottransom/distributed_godis/internal/server"
 )
@@ -99,10 +98,8 @@ func (a *Agent) setupServer() error {
 			a.Config.ACLModelFile,
 			a.Config.ACLPolicyFile,
 	)
-	mapobj := make(kmap.KeyMap, 0)
 	serverConfig := &server.Config{
 		Store: a.kvstore,
-		Keymap:     kmap.SafeMap{Map: mapobj},
 		Authorizer: authorizer}
 	
 	var opts []grpc.ServerOption
