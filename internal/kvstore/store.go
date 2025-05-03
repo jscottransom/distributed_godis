@@ -24,7 +24,7 @@ type Record struct {
 type KVstore struct {
 	file                   *os.File // File to work with
 	Keymap		    	   *kmap.SafeMap
-	mu                     sync.Mutex
+	Mu                   	sync.Mutex
 	baseoffset, nextoffset uint64 // Represents the last offset in the file
 	buf                    *bufio.Writer
 }
@@ -58,14 +58,14 @@ func NewKVstore(dir string, name string) (*KVstore, error) {
 		Keymap: 	kmapObj,
 		baseoffset: offset,
 		nextoffset: offset,
-		mu:         sync.Mutex{},
+		Mu:         sync.Mutex{},
 		buf:        bufio.NewWriter(storefile)}, nil
 }
 
 // Set the passed Key / Value pairing
 func (s *KVstore) Set(record Record) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
 
 	// Set the current offset to the value of the last offset in the store
 	currentoffset := s.nextoffset
@@ -110,8 +110,8 @@ func (s *KVstore) Set(record Record) error {
 // N is the number of bytes to read
 func (s *KVstore) Get(key string) ([]byte, error) {
 	// Lock the file for safe access
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
 
 	// Flush any pending writes to disk
 	s.buf.Flush()
