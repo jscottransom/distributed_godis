@@ -1,10 +1,10 @@
-# 🗄️ Distributed Godis
+# Distributed Godis
 
 **Distributed Godis** is a distributed key-value store built in Go, aiming to explore the complexities and nuances of distributed systems. The project involves spinning up a cluster of nodes (for example, through bootstrapping) , each capable of handling requests and maintaining data consistency across the system.
 
 ---
 
-## 🚀 Project Goals
+## Project Goals
 
 - Develop a distributed key-value store 
 - Implement core distributed systems concepts such as:
@@ -15,7 +15,7 @@
 
 ---
 
-## 🧱 Architecture Overview
+## Architecture Overview
 
 The system is designed around a cluster of nodes, each running an instance of the Godis server. Nodes communicate with each other to replicate data and ensure consistency using Raft. The architecture includes:
 
